@@ -52,10 +52,14 @@
 
 #include <IOKit/pwr_mgt/IOPMpowerState.h>
 #include <IOKit/IOServicePM.h>
+#include <IOKit/IOReportTypes.h>
 
 extern "C" {
 #include <kern/thread_call.h>
 }
+
+#include <Availability.h>
+#include "LegacyLibkernMacros.h"
 
 #ifndef UINT64_MAX
 #define UINT64_MAX        18446744073709551615ULL
@@ -128,6 +132,7 @@ extern const OSSymbol *		gIOFirstPublishNotification;
 extern const OSSymbol *		gIOMatchedNotification;
 extern const OSSymbol *		gIOFirstMatchNotification;
 extern const OSSymbol *		gIOTerminatedNotification;
+extern const OSSymbol *		gIOWillTerminateNotification;
 
 extern const OSSymbol *		gIOGeneralInterest;
 extern const OSSymbol *		gIOBusyInterest;
@@ -375,14 +380,57 @@ public:
 
     virtual IOService * copyClientWithCategory( const OSSymbol * category );
 
+public:
+
+#if defined(__MAC_OS_X_VERSION_MIN_REQUIRED) && __MAC_OS_X_VERSION_MIN_REQUIRED >= 1090
+
+/*! @function       configureReport
+    @abstract       configure IOReporting channels
+    @availability   SPI on OS X v10.9 / iOS 7 and later
+
+    @param  channels    - channels to configure
+    @param  action      - enable/disable/size, etc
+    @param  result      - action-specific returned value
+    @param  destination - action-specific default destination
+*/
+    virtual IOReturn configureReport(IOReportChannelList   *channels,
+                                 IOReportConfigureAction action,
+                                 void                  *result,
+                                 void                  *destination);
+
+/*! @function       updateReport
+    @abstract       request current data for the specified channels
+    @availability   SPI on OS X 10.9 / iOS 7 and later
+
+    @param channels     - channels to be updated
+    @param action       - type/style of update
+    @param result       - returned details about what was updated
+    @param destination  - destination for this update (action-specific)
+*/
+    virtual IOReturn updateReport(IOReportChannelList      *channels,
+                              IOReportUpdateAction      action,
+                              void                     *result,
+                              void                     *destination);
+
+#endif
+
 private:
 #if __LP64__
+
+#if defined(__MAC_OS_X_VERSION_MIN_REQUIRED) && __MAC_OS_X_VERSION_MIN_REQUIRED >= 1090
+    OSMetaClassDeclareReservedUsed(IOService, 0);
+    OSMetaClassDeclareReservedUsed(IOService, 1);
+#else
     OSMetaClassDeclareReservedUnused(IOService, 0);
     OSMetaClassDeclareReservedUnused(IOService, 1);
+#endif
+
     OSMetaClassDeclareReservedUnused(IOService, 2);
     OSMetaClassDeclareReservedUnused(IOService, 3);
     OSMetaClassDeclareReservedUnused(IOService, 4);
     OSMetaClassDeclareReservedUnused(IOService, 5);
+    OSMetaClassDeclareReservedUnused(IOService, 6);
+    OSMetaClassDeclareReservedUnused(IOService, 7);
 #else
     OSMetaClassDeclareReservedUsed(IOService, 0);
     OSMetaClassDeclareReservedUsed(IOService, 1);
@@ -390,10 +438,17 @@ private:
     OSMetaClassDeclareReservedUsed(IOService, 3);
     OSMetaClassDeclareReservedUsed(IOService, 4);
     OSMetaClassDeclareReservedUsed(IOService, 5);
-#endif
 
+#ifdef defined(__MAC_OS_X_VERSION_MIN_REQUIRED) && __MAC_OS_X_VERSION_MIN_REQUIRED >= 1090
+    OSMetaClassDeclareReservedUsed(IOService, 6);
+    OSMetaClassDeclareReservedUsed(IOService, 7);
+#else
     OSMetaClassDeclareReservedUnused(IOService, 6);
     OSMetaClassDeclareReservedUnused(IOService, 7);
+#endif
+
+#endif
+
     OSMetaClassDeclareReservedUnused(IOService, 8);
     OSMetaClassDeclareReservedUnused(IOService, 9);
     OSMetaClassDeclareReservedUnused(IOService, 10);
@@ -465,7 +520,7 @@ public:
     @param score Pointer to the current driver's probe score, which is used to order multiple matching drivers in the same match category. It defaults to the value of the <code>IOProbeScore</code> property in the drivers property table, or <code>kIODefaultProbeScore</code> if none is specified. The <code>probe</code> method may alter the score to affect start order.
     @result An IOService instance or zero when the probe is unsuccessful. In almost all cases the value of <code>this</code> is returned on success. If another IOService object is returned, the probed instance is detached and freed, and the returned instance is used in its stead for <code>start</code>. */
     
-    virtual IOService * probe(	IOService * 	provider,
+    virtual LIBKERN_RETURNS_NOT_RETAINED IOService * probe(	IOService * 	provider,
 				SInt32 	  *	score );
 
 /*! @function start
@@ -632,7 +687,7 @@ public:
     @param client The IOService object at which matching is taking place.
     @result Returns the IOService instance to be used for location matching. */
 
-    virtual IOService * matchLocation( IOService * client );
+    virtual LIBKERN_RETURNS_NOT_RETAINED IOService * matchLocation( IOService * client );
 
     /* Resource service */
 
@@ -707,7 +762,7 @@ public:
     @param timeout The maximum time to wait.
     @result A published IOService object matching the supplied dictionary. */
 
-    static IOService * waitForService( OSDictionary * matching,
+    static LIBKERN_RETURNS_NOT_RETAINED IOService * waitForService( LIBKERN_CONSUMED OSDictionary * matching,
                             mach_timespec_t * timeout = 0);
 
 /*! @function waitForMatchingService
@@ -1155,10 +1210,10 @@ public:
 
     virtual IOReturn newUserClient( task_t owningTask, void * securityID,
                                     UInt32 type, OSDictionary * properties,
-                                    IOUserClient ** handler );
+                                    LIBKERN_RETURNS_RETAINED IOUserClient ** handler );
 
     virtual IOReturn newUserClient( task_t owningTask, void * securityID,
-                                    UInt32 type, IOUserClient ** handler );
+                                    UInt32 type, LIBKERN_RETURNS_RETAINED IOUserClient ** handler );
 
     /* Return code utilities */
 
@@ -1284,7 +1339,7 @@ private:
 	APPLE_KEXT_COMPATIBILITY_VIRTUAL
     IOReturn resolveInterrupt(IOService *nub, int source);
 	APPLE_KEXT_COMPATIBILITY_VIRTUAL
-    IOReturn lookupInterrupt(int source, bool resolve, IOInterruptController **interruptController);
+    IOReturn lookupInterrupt(int source, bool resolve, LIBKERN_RETURNS_NOT_RETAINED IOInterruptController **interruptController);
 
 
     /* power management */

@@ -73,10 +73,10 @@ extern proc_t kernproc;
  *  @param cond  precondition
  *  @param str   printf-like string
  */
-#define SYSLOG_COND(cond, module, str, ...)                                                                \
-	do {                                                                                                   \
-	    if (cond)                                                                                          \
-	        lilu_os_log( "%s%10s" str "\n", xStringify(PRODUCT_NAME) ": ", module " @ ", ## __VA_ARGS__);  \
+#define SYSLOG_COND(cond, module, str, ...)                                                                			  \
+	do {                                                                                                   			  \
+	    if (cond)                                                                                          			  \
+	        lilu_os_log( "%s%10s: @ " str "\n", xStringify(PRODUCT_NAME), safeString(module), ## __VA_ARGS__);		  \
 	} while (0)
 
 /**
@@ -94,12 +94,12 @@ extern proc_t kernproc;
  *  @param module log module
  *  @param str    printf-like string
  */
-#define SYSTRACE_COND(cond, module, str, ...)                                                                        \
-	do {                                                                                                             \
-	    if (cond) {                                                                                                  \
-	        SYSLOG(module, str, ## __VA_ARGS__);                                                                     \
-		    OSReportWithBacktrace( "%s%10s" str "\n", xStringify(PRODUCT_NAME) ": ", module " @ ", ## __VA_ARGS__);  \
-	    }                                                                                                            \
+#define SYSTRACE_COND(cond, module, str, ...)                                                                        			 \
+	do {                                                                                                             			 \
+	    if (cond) {                                                                                                  			 \
+	        SYSLOG(module, str, ## __VA_ARGS__);                                                                     			 \
+		    OSReportWithBacktrace( "%s%10s: @ " str "\n", xStringify(PRODUCT_NAME), safeString(module), ## __VA_ARGS__);			 \
+	    }                                                                                                            			 \
 	} while (0)
 
 /**
@@ -117,12 +117,12 @@ extern proc_t kernproc;
  *  @param module log module
  *  @param str    printf-like string
  */
-#define PANIC_COND(cond, module, str, ...)                                                             \
-	do {                                                                                               \
-	    if (cond) {                                                                                    \
-	        (panic)( "%s%10s" str "\n", xStringify(PRODUCT_NAME) ": ", module " @ ", ## __VA_ARGS__);  \
-	        UNREACHABLE();                                                                             \
-	    }                                                                                              \
+#define PANIC_COND(cond, module, str, ...)                                                             		\
+	do {                                                                                               		\
+	    if (cond) {                                                                                    		\
+	        (panic)( "%s%10s: @ " str "\n", xStringify(PRODUCT_NAME), safeString(module), ## __VA_ARGS__);  \
+	        UNREACHABLE();                                                                             		\
+	    }                                                                                              		\
 	} while (0)
 
 /**
@@ -185,11 +185,6 @@ extern proc_t kernproc;
 #endif
 
 /**
- *  Deprecate the interface
- */
-#define DEPRECATE(x) __attribute__((deprecated(x)))
-
-/**
  *  Macros to bypass kernel address printing protection
  */
 #define PRIKADDR "0x%08X%08X"
@@ -231,9 +226,29 @@ extern proc_t kernproc;
 #define EXPORT __attribute__((visibility("default")))
 
 /**
+ *  Ensure the symbol is not exported
+ */
+#define PRIVATE __attribute__((visibility("hidden")))
+
+/**
+ *  For private fallback symbol definition
+ */
+#define WEAKFUNC __attribute__((weak))
+
+/**
  *  Remove padding between fields
  */
 #define PACKED __attribute__((packed))
+
+/**
+ *  Deprecate the interface
+ */
+#define DEPRECATE(x) __attribute__((deprecated(x)))
+
+/**
+ *  Non-null argument
+ */
+#define NONNULL __attribute__((nonnull))
 
 /**
  *  This function is supposed to workaround missing entries in the system log.
@@ -311,6 +326,7 @@ enum KernelVersion {
 	Sierra        = 16,
 	HighSierra    = 17,
 	Mojave        = 18,
+	Catalina      = 19,
 };
 
 /**
@@ -356,7 +372,7 @@ inline bool checkKernelArgument(const char *name) {
  *  @return numeric kernel version
  */
 constexpr size_t parseModuleVersion(const char *version) {
-	return (version[0] - '0') * 100 + (version[2] - '0') * 10 + (version[4] - '0');
+	return (size_t)(version[0] - '0') * 100 + (version[2] - '0') * 10 + (version[4] - '0');
 }
 
 /**
@@ -492,6 +508,14 @@ inline T FunctionCast(T org, mach_vm_address_t ptr) {
 }
 
 /**
+ *  Reference cleaner
+ */
+template<class T> struct remove_reference      {typedef T type;};
+template<class T> struct remove_reference<T&>  {typedef T type;};
+template<class T> struct remove_reference<T&&> {typedef T type;};
+
+
+/**
  *  Typed buffer allocator
  */
 namespace Buffer {
@@ -506,7 +530,7 @@ namespace Buffer {
 		if (s > BufferMax) return nullptr;
 		return static_cast<T *>(kern_os_malloc(s));
 	}
-	
+
 	template <typename T>
 	inline bool resize(T *&buf, size_t size) {
 		size_t s = sizeof(T) * size;
@@ -516,12 +540,12 @@ namespace Buffer {
 			buf = nbuf;
 			return true;
 		}
-		
+
 		return false;
 	}
-	
+
 	template <typename T>
-	inline void deleter(T *buf) {
+	inline void deleter(T *buf NONNULL) {
 		lilu_os_free(buf);
 	}
 }
@@ -536,7 +560,7 @@ struct Page {
 	 *  @return true on success
 	 */
 	EXPORT bool alloc();
-	
+
 	/**
 	 *  Sets page protection
 	 *
@@ -545,21 +569,21 @@ struct Page {
 	 *  @return true on success
 	 */
 	EXPORT bool protect(vm_prot_t prot);
-	
+
 	/**
 	 *  Deletes the page
 	 *
 	 *  @param p page
 	 */
-	EXPORT static void deleter(Page *p);
-	
+	EXPORT static void deleter(Page *p NONNULL);
+
 	/**
 	 *  Creates a page object
 	 *
 	 *  @return pointer to new page object or nullptr
 	 */
 	EXPORT static Page *create();
-	
+
 	/**
 	 *  Page buffer
 	 */
@@ -574,7 +598,7 @@ class ThreadLocal {
 	/**
 	 *  A list of tread identifiers
 	 */
-	_Atomic(thread_t) threads[N];
+	_Atomic(thread_t) threads[N] {};
 
 	/**
 	 *  A list of value references
@@ -584,13 +608,8 @@ class ThreadLocal {
 public:
 	/**
 	 *  Initialise storage
-	 *
-	 *  @return true on success
 	 */
-	void init() {
-		for (auto &thread : threads)
-			atomic_init(&thread, nullptr);
-	}
+	void init() {}
 
 	/**
 	 *  Deinitialise storage
@@ -678,12 +697,12 @@ template <typename T, typename Y, void (*deleterT)(T)=emptyDeleter<T>, void (*de
 struct ppair {
 	T first;
 	Y second;
-	
+
 	static ppair *create() {
 		return new ppair;
 	}
-	
-	static void deleter(ppair *p) {
+
+	static void deleter(ppair *p NONNULL) {
 		deleterT(p->first);
 		deleterY(p->second);
 		delete p;
@@ -692,14 +711,15 @@ struct ppair {
 
 /**
  *  Embedded vector-like container
- *  You muse call deinit before destruction
+ *  You must call deinit before destruction
  *  Ugh, someone, please, port libc++ to XNU...
  *
  *  @param T        held type
+ *  @param P        destructible type
  *  @param deleter  type destructor
  */
-template <typename T, void (*deleter)(T)=emptyDeleter<T>>
-class evector {
+template <typename T, typename P, void (*deleter)(P)=emptyDeleter<P>>
+class evector_base {
 	T *ptr {nullptr};
 	size_t cnt {0};
 	size_t rsvd {0};
@@ -712,7 +732,7 @@ public:
 	size_t size() const {
 		return cnt;
 	}
-	
+
 	/**
 	 *  Return pointer to the elements
 	 *  Valid until evector contents change
@@ -722,7 +742,7 @@ public:
 	T *data() const {
 		return ptr;
 	}
-	
+
 	/**
 	 *  Return last element id
 	 *
@@ -731,7 +751,7 @@ public:
 	size_t last() const {
 		return cnt-1;
 	}
-	
+
 	/**
 	 *  Return evector element reference
 	 *
@@ -742,7 +762,7 @@ public:
 	T &operator [](size_t index) {
 		return ptr[index];
 	}
-	
+
 	/**
 	 *  Return evector const element reference
 	 *
@@ -753,7 +773,7 @@ public:
 	const T &operator [](size_t index) const {
 		return ptr[index];
 	}
-	
+
 	/**
 	 *  Reserve memory for at least N elements
 	 *
@@ -772,18 +792,16 @@ public:
 				return nullptr;
 			}
 		}
-		
+
 		return ptr;
 	}
-	
+
 	/**
 	 *  Erase evector element
 	 *
 	 *  @param index element index
-	 *
-	 *  @return true on success
 	 */
-	bool erase(size_t index, bool free=true) {
+	void erase(size_t index, bool free=true) {
 		deleter(ptr[index]);
 		if (--cnt != index)
 			lilu_os_memmove(&ptr[index], &ptr[index + 1], (cnt - index) * sizeof(T));
@@ -793,10 +811,8 @@ public:
 			ptr = nullptr;
 			rsvd = 0;
 		}
-
-		return true;
 	}
-	
+
 	/**
 	 *  Add an element to evector end
 	 *
@@ -811,11 +827,11 @@ public:
 			cnt++;
 			return true;
 		}
-		
+
 		SYSLOG("evector", "insertion failure");
 		return false;
 	}
-	
+
 	/**
 	 *  Add an element to evector end
 	 *
@@ -830,15 +846,15 @@ public:
 			cnt++;
 			return true;
 		}
-		
+
 		SYSLOG("evector", "insertion failure");
 		return false;
 	}
-	
-	evector() = default;
-	evector(const evector &) = delete;
-	evector operator =(const evector &) = delete;
-	
+
+	evector_base() = default;
+	evector_base(const evector_base &) = delete;
+	evector_base operator =(const evector_base &) = delete;
+
 	/**
 	 * Free the used memory
 	 */
@@ -854,6 +870,16 @@ public:
 };
 
 /**
+*  Embedded vector-like container, simplified specialisation
+*  You must call deinit before destruction
+*
+*  @param T        held type
+*  @param deleter  type destructor
+*/
+template <typename T, void (*deleter)(T)=emptyDeleter<T>>
+class evector : public evector_base<typename remove_reference<T>::type, T, deleter> { };
+
+/**
  *  Slightly non-standard helpers to get the date in a YYYY-MM-DD format.
  */
 template <size_t i>
@@ -865,7 +891,10 @@ inline constexpr char getBuildYear() {
 template <size_t i>
 inline constexpr char getBuildMonth() {
 	static_assert(i < 2, "Month consists of two digits");
-	auto mon = *reinterpret_cast<const uint32_t *>(__DATE__);
+	auto mon = static_cast<uint32_t>(__DATE__[0])
+		| (static_cast<uint32_t>(__DATE__[1]) << 8U)
+		| (static_cast<uint32_t>(__DATE__[2]) << 16U)
+		| (static_cast<uint32_t>(__DATE__[3]) << 24U);
 	switch (mon) {
 		case ' naJ':
 			return "01"[i];
