@@ -1,0 +1,15 @@
+name: Build kext
+on: push
+
+jobs:
+    build:
+        runs-on: macos-latest
+        steps:
+            - name: Checkout commit
+              uses: actions/checkout@v2
+            - run: xcodebuild
+            - name: Upload resources
+              uses: actions/upload-artifact@v2
+              with:
+                  name: res
+                  path: build/Release
